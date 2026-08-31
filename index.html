@@ -38,7 +38,7 @@
         .header h1 { font-size: 1.6rem; font-weight: 700; }
         .header h1 span { color: #d1bfeb; }
         .header .subtitle { opacity: 0.85; font-size: 0.9rem; }
-        .stats-mini { display: flex; gap: 15px; flex-wrap: wrap; }
+        .stats-mini { display: flex; gap: 15px; flex-wrap: wrap; align-items: center; }
         .stats-mini span {
             background: rgba(255,255,255,0.15); padding: 4px 14px;
             border-radius: 20px; font-size: 0.85rem;
@@ -50,6 +50,7 @@
             padding: 4px 14px;
             border-radius: 20px;
             font-size: 0.8rem;
+            font-weight: 600;
         }
         .status-cloud.offline {
             background: #e74c3c;
@@ -499,9 +500,10 @@
 // ============================================
 // CONFIGURACIÓN
 // ============================================
-const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-    ? 'http://localhost:5000' 
-    : 'http://' + window.location.hostname + ':5000';
+// CAMBIA ESTA URL POR LA DE TU SERVIDOR
+// Si estás en local: http://localhost:5000
+// Si estás en GitHub Pages: http://192.168.1.26:5000 (cambia por tu IP)
+const API_URL = 'http://localhost:5000';
 
 console.log('🔗 API URL:', API_URL);
 
@@ -546,11 +548,14 @@ async function cargarRecetasDesdeServidor() {
         const resultado = await response.json();
         if (resultado.success) {
             recetasGuardadas = {};
-            // Procesar los datos recibidos
             if (Array.isArray(resultado.data)) {
                 resultado.data.forEach(item => {
-                    if (item && item.nombre) {
-                        recetasGuardadas[item.nombre] = item.ingredientes || [];
+                    if (item && item['Nombre Receta']) {
+                        let ingredientes = item['Ingredientes'] || [];
+                        if (typeof ingredientes === 'string') {
+                            try { ingredientes = JSON.parse(ingredientes); } catch(e) { ingredientes = []; }
+                        }
+                        recetasGuardadas[item['Nombre Receta']] = ingredientes;
                     }
                 });
             }
@@ -616,132 +621,6 @@ async function guardarReceta() {
     }
 }
 
-async function guardarPlanificacion() {
-    // Verificar si hay contenido
-    let tieneContenido = false;
-    diasSemana.forEach(dia => {
-        categoriasComida.forEach(cat => {
-            if (planSemanal[dia] && planSemanal[dia][cat] && planSemanal[dia][cat].length > 0) {
-                tieneContenido = true;
-            }
-        });
-    });
-    
-    if (!tieneContenido) {
-        alert('El plan está vacío. Asigna algunas recetas primero.');
-        return;
-    }
-    
-    const fecha = new Date();
-    const nombre = prompt('Nombre de esta planificación (ej: Semana 1, Agosto 2024):', 
-        'Semana ' + (Object.keys(planificacionesGuardadas).length + 1) + ' - ' + 
-        fecha.toLocaleDateString('es-MX'));
-    if (!nombre) return;
-    
-    try {
-        const response = await fetch(`${API_URL}/guardar_plan`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                nombre: nombre,
-                plan: planSemanal,
-                recetas: recetasGuardadas,
-                fecha: fecha.toISOString()
-            })
-        });
-        const resultado = await response.json();
-        
-        if (resultado.success) {
-            alert('✅ Planificación guardada en la nube.');
-            // Guardar localmente también como caché
-            const id = 'plan_' + Date.now();
-            planificacionesGuardadas[id] = {
-                nombre: nombre,
-                fecha: fecha.toISOString(),
-                plan: JSON.parse(JSON.stringify(planSemanal)),
-                recetas: JSON.parse(JSON.stringify(recetasGuardadas))
-            };
-            localStorage.setItem('smae_planificaciones', JSON.stringify(planificacionesGuardadas));
-            actualizarListaPlanificaciones();
-        } else {
-            alert('❌ Error: ' + resultado.error);
-        }
-    } catch (error) {
-        alert('❌ Error de conexión: ' + error.message);
-    }
-}
-
-async function cargarPlanificacion(id) {
-    if (!id) return;
-    
-    try {
-        const response = await fetch(`${API_URL}/cargar_plan`);
-        const resultado = await response.json();
-        
-        if (resultado.success && resultado.data) {
-            const data = resultado.data;
-            
-            // Cargar el plan
-            if (data.plan) {
-                planSemanal = JSON.parse(JSON.stringify(data.plan));
-            }
-            
-            // Cargar las recetas
-            if (data.recetas) {
-                recetasGuardadas = JSON.parse(JSON.stringify(data.recetas));
-            }
-            
-            // Guardar en localStorage como caché
-            localStorage.setItem('smae_plan_semanal', JSON.stringify(planSemanal));
-            localStorage.setItem('smae_recetas', JSON.stringify(recetasGuardadas));
-            
-            actualizarPlanificador();
-            actualizarListaRecetas();
-            actualizarSelectRecetas();
-            
-            alert('✅ Planificación "' + (data.nombre || 'cargada') + '" cargada desde la nube.');
-        } else {
-            alert('❌ No se pudo cargar la planificación.');
-        }
-    } catch (error) {
-        alert('❌ Error de conexión: ' + error.message);
-    }
-}
-
-async function sincronizarPlan() {
-    const btn = event.target;
-    btn.textContent = '⏳ Sincronizando...';
-    btn.disabled = true;
-    
-    try {
-        const response = await fetch(`${API_URL}/cargar_plan`);
-        const resultado = await response.json();
-        
-        if (resultado.success && resultado.data) {
-            const data = resultado.data;
-            if (data.plan) {
-                planSemanal = JSON.parse(JSON.stringify(data.plan));
-            }
-            if (data.recetas) {
-                recetasGuardadas = JSON.parse(JSON.stringify(data.recetas));
-            }
-            localStorage.setItem('smae_plan_semanal', JSON.stringify(planSemanal));
-            localStorage.setItem('smae_recetas', JSON.stringify(recetasGuardadas));
-            actualizarPlanificador();
-            actualizarListaRecetas();
-            actualizarSelectRecetas();
-            alert('✅ Plan sincronizado desde la nube.');
-        } else {
-            alert('❌ No se pudo sincronizar.');
-        }
-    } catch (error) {
-        alert('❌ Error de conexión: ' + error.message);
-    }
-    
-    btn.textContent = '🔄 Sincronizar';
-    btn.disabled = false;
-}
-
 // ============================================
 // INICIALIZACIÓN
 // ============================================
@@ -749,12 +628,9 @@ async function init() {
     // Verificar estado del servidor
     await checkServerStatus();
     
-    // Cargar datos del Excel (desde Python)
-    // Los datos se inyectan desde el script Python
+    // Cargar datos de alimentos desde el script Python (se inyectan aquí)
     try {
-        // Cargar alimentos desde el archivo Python (los datos se inyectan aquí)
-        // Esta parte se llena desde el script Python al generar el HTML
-        // Por ahora usamos datos vacíos, el servidor los manejará
+        // Los datos se cargan desde el servidor o desde un archivo JSON
         console.log('📊 Inicializando planificador...');
     } catch (e) {
         console.warn('⚠️ Error al cargar datos locales:', e);
@@ -775,7 +651,6 @@ async function init() {
         const savedPlan = localStorage.getItem('smae_plan_semanal');
         if (savedPlan) {
             const parsed = JSON.parse(savedPlan);
-            // Fusionar con la estructura actual
             diasSemana.forEach(dia => {
                 if (!parsed[dia]) parsed[dia] = {};
                 categoriasComida.forEach(cat => {
@@ -789,23 +664,7 @@ async function init() {
         if (savedRecetas) {
             recetasGuardadas = JSON.parse(savedRecetas);
         }
-        
-        const savedPlanes = localStorage.getItem('smae_planificaciones');
-        if (savedPlanes) {
-            planificacionesGuardadas = JSON.parse(savedPlanes);
-        }
     } catch(e) { console.warn('⚠️ No se pudieron cargar datos locales:', e); }
-    
-    // Llenar selects de grupos
-    const grupoSelect = document.getElementById('recetaGrupoFiltro');
-    if (gruposLista.length > 0) {
-        gruposLista.forEach(g => {
-            const opt = document.createElement('option');
-            opt.value = g;
-            opt.textContent = g;
-            grupoSelect.appendChild(opt);
-        });
-    }
     
     // Actualizar UI
     actualizarListaRecetas();
@@ -851,7 +710,6 @@ function filtrarSugerencias() {
     const grupo = document.getElementById('recetaGrupoFiltro').value;
     const lista = document.getElementById('sugerenciasLista');
     
-    // Si no hay datos de alimentos, usar datos de prueba o esperar
     if (Object.keys(alimentosData).length === 0) {
         lista.style.display = 'none';
         return;
