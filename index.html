@@ -627,18 +627,46 @@ async function guardarReceta() {
 // INICIALIZACIÓN
 // ============================================
 async function init() {
-    // Verificar estado del servidor
+    // ============================================
+    // 1. VERIFICAR CONEXIÓN CON EL SERVIDOR
+    // ============================================
     await checkServerStatus();
     
-    // Cargar datos de alimentos desde el script Python (se inyectan aquí)
+    // ============================================
+    // 2. CARGAR ALIMENTOS DESDE EL SERVIDOR
+    // ============================================
     try {
-        // Los datos se cargan desde el servidor o desde un archivo JSON
-        console.log('📊 Inicializando planificador...');
+        const response = await fetch(`${API_URL}/alimentos`);
+        const resultado = await response.json();
+        
+        if (resultado.success) {
+            alimentosData = resultado.alimentos;
+            gruposLista = resultado.grupos;
+            columnasSumar = resultado.columnas_sumar || columnasSumar;
+            
+            console.log(`✅ Alimentos cargados: ${Object.keys(alimentosData).length}`);
+            console.log(`📂 Grupos: ${gruposLista.join(', ')}`);
+            
+            // Actualizar el select de grupos
+            const grupoSelect = document.getElementById('recetaGrupoFiltro');
+            grupoSelect.innerHTML = '<option value="">Todos los grupos</option>';
+            gruposLista.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g;
+                opt.textContent = g;
+                grupoSelect.appendChild(opt);
+            });
+            
+            document.getElementById('alimentosCount').textContent = `📊 ${Object.keys(alimentosData).length} alimentos`;
+        }
     } catch (e) {
-        console.warn('⚠️ Error al cargar datos locales:', e);
+        console.error('❌ Error al cargar alimentos:', e);
+        document.getElementById('alimentosCount').textContent = '⚠️ Sin datos';
     }
     
-    // Inicializar plan semanal
+    // ============================================
+    // 3. INICIALIZAR PLAN SEMANAL (ESTRUCTURA)
+    // ============================================
     diasSemana.forEach(dia => {
         if (!planSemanal[dia]) {
             planSemanal[dia] = {};
@@ -648,7 +676,9 @@ async function init() {
         }
     });
     
-    // Cargar datos guardados localmente (caché)
+    // ============================================
+    // 4. CARGAR DATOS GUARDADOS LOCALMENTE (CACHÉ)
+    // ============================================
     try {
         const savedPlan = localStorage.getItem('smae_plan_semanal');
         if (savedPlan) {
@@ -666,18 +696,31 @@ async function init() {
         if (savedRecetas) {
             recetasGuardadas = JSON.parse(savedRecetas);
         }
-    } catch(e) { console.warn('⚠️ No se pudieron cargar datos locales:', e); }
+        
+        const savedPlanes = localStorage.getItem('smae_planificaciones');
+        if (savedPlanes) {
+            planificacionesGuardadas = JSON.parse(savedPlanes);
+        }
+    } catch(e) { 
+        console.warn('⚠️ No se pudieron cargar datos locales:', e); 
+    }
     
-    // Actualizar UI
+    // ============================================
+    // 5. ACTUALIZAR LA INTERFAZ (UI)
+    // ============================================
     actualizarListaRecetas();
     actualizarSelectRecetas();
     actualizarPlanificador();
     actualizarListaPlanificaciones();
     
-    // Cargar datos del servidor
+    // ============================================
+    // 6. CARGAR RECETAS DESDE EL SERVIDOR
+    // ============================================
     await cargarRecetasDesdeServidor();
     
-    // Intentar cargar la última planificación
+    // ============================================
+    // 7. CARGAR ÚLTIMA PLANIFICACIÓN DESDE EL SERVIDOR
+    // ============================================
     try {
         const response = await fetch(`${API_URL}/cargar_plan`);
         const resultado = await response.json();
@@ -697,12 +740,12 @@ async function init() {
         console.log('ℹ️ No se pudo cargar plan desde la nube:', e);
     }
     
-    document.getElementById('alimentosCount').textContent = '📊 Listo';
+    // ============================================
+    // 8. FINALIZAR
+    // ============================================
     datosCargados = true;
-    
-    console.log('✅ Planificador inicializado');
+    console.log('✅ Planificador inicializado correctamente');
 }
-
 // ============================================
 // RECETARIO - FUNCIONES
 // ============================================
