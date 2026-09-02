@@ -373,31 +373,18 @@
         .mb-20 { margin-bottom: 15px; }
         .mt-15 { margin-top: 15px; }
     </style>
-
-    <div class="header">
-    <div>
-        <h1>🥗 SMAE <span>· Planificador Semanal</span></h1>
-        <div class="subtitle">Sistema Mexicano de Alimentos Equivalentes • 5ª Edición</div>
-    </div>
-    <div class="stats-mini">
-        <span id="alimentosCount">📊 Cargando...</span>
-        <span id="gruposCount">📂 0 grupos</span>
-        <span id="cloudStatus" class="status-cloud">☁️ Conectado</span>
-    </div>
-</div>
 </head>
 <body>
 <div class="container">
     <!-- HEADER -->
     <div class="header">
         <div>
-            <h1>🥗 Planner <span>· </span></h1>
-            <div class="subtitle">SMAE 5ª Edición</div>
+            <h1>🥗 SMAE <span>· Planificador Semanal</span></h1>
+            <div class="subtitle">Sistema Mexicano de Alimentos Equivalentes • 5ª Edición</div>
         </div>
         <div class="stats-mini">
-        
             <span id="alimentosCount">📊 Cargando...</span>
-            <span>📂 18 grupos</span>TAB 1: RECETARIO </span>
+            <span id="gruposCount">📂 0 grupos</span>
             <span id="cloudStatus" class="status-cloud">☁️ Conectado</span>
         </div>
     </div>
@@ -513,11 +500,10 @@
 // ============================================
 // CONFIGURACIÓN
 // ============================================
-// CAMBIA ESTA URL POR LA DE TU SERVIDOR
-// Si estás en local: http://localhost:5000
-// Si estás en GitHub Pages: http://192.168.1.26:5000 (cambia por tu IP)
-//const API_URL = 'http://localhost:5000';
-const API_URL = 'http://192.168.1.26:5000';  // Usa la IP que viste en el servidor
+// 🔥 CAMBIA ESTO POR LA URL DE TU SERVIDOR EN RENDER 🔥
+// Si usas Render: https://tuservidor.onrender.com
+// Si usas local: http://192.168.1.26:5000
+const API_URL = 'http://192.168.1.26:5000';  // <-- CAMBIA ESTO
 
 console.log('🔗 API URL:', API_URL);
 
@@ -545,13 +531,19 @@ async function checkServerStatus() {
     try {
         const response = await fetch(`${API_URL}/`);
         if (response.ok) {
-            document.getElementById('cloudStatus').textContent = '☁️ Conectado';
-            document.getElementById('cloudStatus').className = 'status-cloud';
+            const statusElement = document.getElementById('cloudStatus');
+            if (statusElement) {
+                statusElement.textContent = '☁️ Conectado';
+                statusElement.className = 'status-cloud';
+            }
             return true;
         }
     } catch (e) {
-        document.getElementById('cloudStatus').textContent = '⚠️ Sin conexión';
-        document.getElementById('cloudStatus').className = 'status-cloud offline';
+        const statusElement = document.getElementById('cloudStatus');
+        if (statusElement) {
+            statusElement.textContent = '⚠️ Sin conexión';
+            statusElement.className = 'status-cloud offline';
+        }
         return false;
     }
 }
@@ -635,18 +627,128 @@ async function guardarReceta() {
     }
 }
 
+async function guardarPlanificacion() {
+    let tieneContenido = false;
+    diasSemana.forEach(dia => {
+        categoriasComida.forEach(cat => {
+            if (planSemanal[dia] && planSemanal[dia][cat] && planSemanal[dia][cat].length > 0) {
+                tieneContenido = true;
+            }
+        });
+    });
+    
+    if (!tieneContenido) {
+        alert('El plan está vacío. Asigna algunas recetas primero.');
+        return;
+    }
+    
+    const fecha = new Date();
+    const nombre = prompt('Nombre de esta planificación:', 
+        'Semana ' + (Object.keys(planificacionesGuardadas).length + 1) + ' - ' + 
+        fecha.toLocaleDateString('es-MX'));
+    if (!nombre) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/guardar_plan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                nombre: nombre,
+                plan: planSemanal,
+                recetas: recetasGuardadas,
+                fecha: fecha.toISOString()
+            })
+        });
+        const resultado = await response.json();
+        
+        if (resultado.success) {
+            alert('✅ Planificación guardada en la nube.');
+            const id = 'plan_' + Date.now();
+            planificacionesGuardadas[id] = {
+                nombre: nombre,
+                fecha: fecha.toISOString(),
+                plan: JSON.parse(JSON.stringify(planSemanal)),
+                recetas: JSON.parse(JSON.stringify(recetasGuardadas))
+            };
+            localStorage.setItem('smae_planificaciones', JSON.stringify(planificacionesGuardadas));
+            actualizarListaPlanificaciones();
+        } else {
+            alert('❌ Error: ' + resultado.error);
+        }
+    } catch (error) {
+        alert('❌ Error de conexión: ' + error.message);
+    }
+}
+
+async function cargarPlanificacion(id) {
+    if (!id) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/cargar_plan`);
+        const resultado = await response.json();
+        
+        if (resultado.success && resultado.data) {
+            const data = resultado.data;
+            if (data.plan) {
+                planSemanal = JSON.parse(JSON.stringify(data.plan));
+            }
+            if (data.recetas) {
+                recetasGuardadas = JSON.parse(JSON.stringify(data.recetas));
+            }
+            localStorage.setItem('smae_plan_semanal', JSON.stringify(planSemanal));
+            localStorage.setItem('smae_recetas', JSON.stringify(recetasGuardadas));
+            actualizarPlanificador();
+            actualizarListaRecetas();
+            actualizarSelectRecetas();
+            alert('✅ Planificación "' + (data.nombre || 'cargada') + '" cargada desde la nube.');
+        }
+    } catch (error) {
+        alert('❌ Error de conexión: ' + error.message);
+    }
+}
+
+async function sincronizarPlan() {
+    const btn = event.target;
+    btn.textContent = '⏳ Sincronizando...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch(`${API_URL}/cargar_plan`);
+        const resultado = await response.json();
+        
+        if (resultado.success && resultado.data) {
+            const data = resultado.data;
+            if (data.plan) {
+                planSemanal = JSON.parse(JSON.stringify(data.plan));
+            }
+            if (data.recetas) {
+                recetasGuardadas = JSON.parse(JSON.stringify(data.recetas));
+            }
+            localStorage.setItem('smae_plan_semanal', JSON.stringify(planSemanal));
+            localStorage.setItem('smae_recetas', JSON.stringify(recetasGuardadas));
+            actualizarPlanificador();
+            actualizarListaRecetas();
+            actualizarSelectRecetas();
+            alert('✅ Plan sincronizado desde la nube.');
+        } else {
+            alert('❌ No se pudo sincronizar.');
+        }
+    } catch (error) {
+        alert('❌ Error de conexión: ' + error.message);
+    }
+    
+    btn.textContent = '🔄 Sincronizar';
+    btn.disabled = false;
+}
+
 // ============================================
 // INICIALIZACIÓN
 // ============================================
 async function init() {
-    // ============================================
     // 1. VERIFICAR CONEXIÓN CON EL SERVIDOR
-    // ============================================
     await checkServerStatus();
     
-    // ============================================
     // 2. CARGAR ALIMENTOS DESDE EL SERVIDOR
-    // ============================================
     try {
         const response = await fetch(`${API_URL}/alimentos`);
         const resultado = await response.json();
@@ -657,28 +759,29 @@ async function init() {
             columnasSumar = resultado.columnas_sumar || columnasSumar;
             
             console.log(`✅ Alimentos cargados: ${Object.keys(alimentosData).length}`);
-            console.log(`📂 Grupos: ${gruposLista.join(', ')}`);
             
-            // Actualizar el select de grupos
             const grupoSelect = document.getElementById('recetaGrupoFiltro');
-            grupoSelect.innerHTML = '<option value="">Todos los grupos</option>';
-            gruposLista.forEach(g => {
-                const opt = document.createElement('option');
-                opt.value = g;
-                opt.textContent = g;
-                grupoSelect.appendChild(opt);
-            });
+            if (grupoSelect) {
+                grupoSelect.innerHTML = '<option value="">Todos los grupos</option>';
+                gruposLista.forEach(g => {
+                    const opt = document.createElement('option');
+                    opt.value = g;
+                    opt.textContent = g;
+                    grupoSelect.appendChild(opt);
+                });
+            }
             
-            document.getElementById('alimentosCount').textContent = `📊 ${Object.keys(alimentosData).length} alimentos`;
+            const alimentosCount = document.getElementById('alimentosCount');
+            const gruposCount = document.getElementById('gruposCount');
+            if (alimentosCount) alimentosCount.textContent = `📊 ${Object.keys(alimentosData).length} alimentos`;
+            if (gruposCount) gruposCount.textContent = `📂 ${gruposLista.length} grupos`;
         }
     } catch (e) {
         console.error('❌ Error al cargar alimentos:', e);
         document.getElementById('alimentosCount').textContent = '⚠️ Sin datos';
     }
     
-    // ============================================
-    // 3. INICIALIZAR PLAN SEMANAL (ESTRUCTURA)
-    // ============================================
+    // 3. INICIALIZAR PLAN SEMANAL
     diasSemana.forEach(dia => {
         if (!planSemanal[dia]) {
             planSemanal[dia] = {};
@@ -688,9 +791,7 @@ async function init() {
         }
     });
     
-    // ============================================
-    // 4. CARGAR DATOS GUARDADOS LOCALMENTE (CACHÉ)
-    // ============================================
+    // 4. CARGAR DATOS GUARDADOS LOCALMENTE
     try {
         const savedPlan = localStorage.getItem('smae_plan_semanal');
         if (savedPlan) {
@@ -717,22 +818,16 @@ async function init() {
         console.warn('⚠️ No se pudieron cargar datos locales:', e); 
     }
     
-    // ============================================
-    // 5. ACTUALIZAR LA INTERFAZ (UI)
-    // ============================================
+    // 5. ACTUALIZAR LA INTERFAZ
     actualizarListaRecetas();
     actualizarSelectRecetas();
     actualizarPlanificador();
     actualizarListaPlanificaciones();
     
-    // ============================================
     // 6. CARGAR RECETAS DESDE EL SERVIDOR
-    // ============================================
     await cargarRecetasDesdeServidor();
     
-    // ============================================
     // 7. CARGAR ÚLTIMA PLANIFICACIÓN DESDE EL SERVIDOR
-    // ============================================
     try {
         const response = await fetch(`${API_URL}/cargar_plan`);
         const resultado = await response.json();
@@ -752,12 +847,10 @@ async function init() {
         console.log('ℹ️ No se pudo cargar plan desde la nube:', e);
     }
     
-    // ============================================
-    // 8. FINALIZAR
-    // ============================================
     datosCargados = true;
     console.log('✅ Planificador inicializado correctamente');
 }
+
 // ============================================
 // RECETARIO - FUNCIONES
 // ============================================
